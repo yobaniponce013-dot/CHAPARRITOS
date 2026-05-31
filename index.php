@@ -43,9 +43,109 @@ try {
     exit;
 }
 
+function createTablesIfNotExist($pdo) {
+    // Verificar si la tabla 'users' existe. Si no, asumimos que la base está completamente en blanco
+    $stmt = $pdo->query("SHOW TABLES LIKE 'users'");
+    if ($stmt->fetch()) {
+        return; // Las tablas ya existen, no hay nada que crear
+    }
+
+    // SQL de creación de todas las tablas relacionales para Chaparritos Pizza
+    $sql = "
+    CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) NOT NULL UNIQUE,
+        phone VARCHAR(15) NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        role ENUM('client', 'admin') DEFAULT 'client',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB;
+
+    CREATE TABLE IF NOT EXISTS products (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        price DECIMAL(10, 2) NOT NULL,
+        category ENUM('pizzas', 'drinks', 'sides', 'promos') NOT NULL,
+        image_url VARCHAR(255) NOT NULL,
+        sizes VARCHAR(100) DEFAULT 'Chica,Mediana,Familiar',
+        ingredients TEXT,
+        is_available BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB;
+
+    CREATE TABLE IF NOT EXISTS inventory (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        product_id INT UNIQUE,
+        stock_quantity INT NOT NULL DEFAULT 50,
+        min_stock INT NOT NULL DEFAULT 5,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB;
+
+    CREATE TABLE IF NOT EXISTS offers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        code VARCHAR(20) NOT NULL UNIQUE,
+        discount_percent INT NOT NULL CHECK (discount_percent > 0 AND discount_percent <= 100),
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB;
+
+    CREATE TABLE IF NOT EXISTS orders (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NULL,
+        guest_name VARCHAR(100) NULL,
+        guest_phone VARCHAR(15) NULL,
+        order_type ENUM('pickup', 'delivery') NOT NULL,
+        delivery_address TEXT NULL,
+        delivery_lat DECIMAL(10, 8) NULL,
+        delivery_lng DECIMAL(11, 8) NULL,
+        delivery_distance DECIMAL(5, 2) NULL,
+        estimated_time VARCHAR(50) NOT NULL,
+        status ENUM('preparando', 'horno', 'listo', 'entregado') DEFAULT 'preparando',
+        subtotal DECIMAL(10, 2) NOT NULL,
+        discount_amount DECIMAL(10, 2) DEFAULT 0.00,
+        total_amount DECIMAL(10, 2) NOT NULL,
+        promo_code VARCHAR(20) NULL,
+        payment_method ENUM('cash', 'card') NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB;
+
+    CREATE TABLE IF NOT EXISTS order_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        product_id INT NULL,
+        product_name VARCHAR(100) NOT NULL,
+        size VARCHAR(20) NOT NULL,
+        quantity INT NOT NULL DEFAULT 1,
+        unit_price DECIMAL(10, 2) NOT NULL,
+        extra_ingredients TEXT NULL,
+        total_price DECIMAL(10, 2) NOT NULL,
+        FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB;
+
+    CREATE TABLE IF NOT EXISTS payments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        card_brand VARCHAR(20) NULL,
+        last4 VARCHAR(4) NULL,
+        transaction_status VARCHAR(50) NOT NULL DEFAULT 'completed',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB;
+    ";
+
+    $pdo->exec($sql);
+}
+
 // Función para sembrar catálogo de productos automáticamente si es necesario
 function checkAndSeedDatabase($pdo) {
     try {
+        // Crear tablas si no existen
+        createTablesIfNotExist($pdo);
+
         // Verificar si la base de datos tiene productos
         $stmt = $pdo->query("SELECT COUNT(*) FROM products");
         $count = (int)$stmt->fetchColumn();
